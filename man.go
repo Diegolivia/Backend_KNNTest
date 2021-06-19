@@ -90,7 +90,7 @@ func GetBodylocal(path string) []*Data {
 
 func toData(s []string) Data {
 	var dt Data
-	slc := make([]float64, len(s), len(s))
+	slc := make([]float64, len(s))
 	for i := 0; i < len(s); i += 1 {
 		sAux, _ := strconv.ParseFloat(s[i], 64)
 		slc[i] = float64(sAux)
@@ -173,7 +173,7 @@ func WorkData(tgt Data, trn <-chan OrdData, res chan<- []dtAux, wg *sync.WaitGro
 //Calcular la distancia de los Knn usando canales
 func knn(target Data, Tdata []*Data, k int) {
 	jobs := make(chan OrdData)
-	res := make(chan []dtAux, 20)
+	res := make(chan []dtAux, 40)
 	wg := new(sync.WaitGroup)
 
 	var res_Tb []dtAux
@@ -227,14 +227,18 @@ func createNewData(w http.ResponseWriter, r *http.Request) {
 	convertir_a_cadena := string(reqBody)
 
 	fmt.Println("Loading Target Data...")
-	dt_tgt := LoadTarget(convertir_a_cadena)
+	dt_tgt = LoadTarget(convertir_a_cadena)
 	fmt.Println(dt_tgt)
 
 	fmt.Println("Standarize Target Age...")
 	StandarizeTarget(stAge, &dt_tgt)
 	fmt.Println(dt_tgt)
+}
 
-	knn(dt_tgt, dt, 7)
+func runKnn(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("Request Received")
+	num, _ := strconv.Atoi(strings.TrimPrefix(r.URL.Path, "/knn/"))
+	knn(dt_tgt, dt, num)
 }
 
 func homePage(w http.ResponseWriter, r *http.Request) {
@@ -244,20 +248,17 @@ func homePage(w http.ResponseWriter, r *http.Request) {
 func handleRequest() {
 	http.HandleFunc("/", homePage)
 	http.HandleFunc("/data", createNewData)
+	http.HandleFunc("/knn/", runKnn)
 	log.Fatal(http.ListenAndServe(":6969", nil))
-
 }
 
-//TODO: ADD CRUD
-//TODO: ADD NETWORK CONECTION
 //TODO: ADD TARGET DATA FORMAT
 var dt []*Data
 var stAge Standarizer
+var dt_tgt Data
 
 func main() {
-
 	//targetD := `{"AMBITO_INEI": 1,"NACIONAL_EXTRANJERO": 1,"SEXO":1,"EDAD": 20,"PLAN_DE_SEGURO_SIS_EMPRENDEDOR": 0,"PLAN_DE_SEGURO_SIS_GRATUITO": 1,"PLAN_DE_SEGURO_SIS_INDEPENDIENTE": 0,"PLAN_DE_SEGURO_SIS_MICROEMPRESA": 0,"PLAN_DE_SEGURO_SIS_PARA_TODOS": 0}`
-
 	URL := "https://raw.githubusercontent.com/Diegolivia/GoBackendKnn/main/Data/D_NORM_100.csv"
 	fmt.Println("Loading Data...")
 	dt = GetBodyNet(URL)
