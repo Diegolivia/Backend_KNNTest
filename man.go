@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"math"
 	"net/http"
@@ -39,12 +40,17 @@ type OrdData struct {
 	dt  *Data
 }
 
+type dtAux struct {
+	dt  Data
+	val float64
+}
+
 type ColValue struct {
 	pos int
 	val float64
 }
 
-type ByVal []ColValue
+type ByVal []dtAux
 
 func (a ByVal) Len() int           { return len(a) }
 func (a ByVal) Less(i, j int) bool { return a[i].val < a[j].val }
@@ -134,40 +140,44 @@ func UnStandarizeAge(ogA []ColValue, dt []*Data) {
 
 //Calcular la distancia de target a train data utilizando distancia euclideana
 func CalcDist(tgt, trn Data) float64 {
-	return math.Sqrt(math.Pow(tgt.C1-trn.C1, 2) + math.Pow(tgt.C2-trn.C2, 2) + math.Pow(tgt.C3-trn.C3, 2) + math.Pow(tgt.C4-trn.C4, 2) + math.Pow(tgt.C5-trn.C5, 2) + math.Pow(tgt.C6-trn.C6, 2) + math.Pow(tgt.C7-trn.C7, 2) + math.Pow(tgt.C8-trn.C8, 2) + math.Pow(tgt.C9-trn.C9, 2))
+	return math.Sqrt(math.Pow(tgt.C1-trn.C1, 2) + math.Pow(tgt.C2-trn.C2, 2) + math.Pow(tgt.C3-trn.C3, 2) + math.Pow(tgt.C5-trn.C5, 2) + math.Pow(tgt.C6-trn.C6, 2) + math.Pow(tgt.C7-trn.C7, 2) + math.Pow(tgt.C8-trn.C8, 2) + math.Pow(tgt.C9-trn.C9, 2))
+}
+
+func tryAdd(arr []dtAux, dt dtAux) []dtAux {
+	arr = append(arr, dt)
+	sort.Sort(ByVal(arr))
+	return arr[:4]
 }
 
 //Evaluar la distancia de target a la data de training recibida del canal y devuelve solo las distancias menores
-func WorkData(tgt Data, trn <-chan OrdData, res chan<- [4]ColValue, wg *sync.WaitGroup) {
+func WorkData(tgt Data, trn <-chan OrdData, res chan<- []dtAux, wg *sync.WaitGroup) {
 	defer wg.Done()
 	count := 0
 	//max := 0.0
-	var kval []ColValue
+	var kval []dtAux
 	for j := range trn {
 		a := CalcDist(tgt, *j.dt)
 		if count < 4 {
-			kval = append(kval, ColValue{count, a})
+			kval = append(kval, dtAux{*j.dt, a})
 			sort.Sort(ByVal(kval))
 		} else {
-			for i := 3; i > 0; i-- {
-				if a > kval[i].val {
-					if i == 3 {
-						break
-					}
-				}
+			if a < kval[len(kval)-1].val {
+				kval = tryAdd(kval, dtAux{*j.dt, a})
 			}
 		}
 		count++
 	}
-	fmt.Println(kval)
-	//res <- kval
+	res <- kval
 }
 
 //Calcular la distancia de los Knn usando canales
 func knn(target Data, Tdata []*Data, k int) {
 	jobs := make(chan OrdData)
-	res := make(chan [4]ColValue, 10)
+	res := make(chan []dtAux, 20)
 	wg := new(sync.WaitGroup)
+
+	var res_Tb []dtAux
+
 	fmt.Println("Start Knn")
 
 	for a := 0; a <= 3; a++ {
@@ -184,9 +194,25 @@ func knn(target Data, Tdata []*Data, k int) {
 	}()
 
 	for v := range res {
-		fmt.Println(v)
-	}
+		res_Tb = append(res_Tb, v...)
 
+	}
+	if k > 19 {
+		k = 15
+	}
+	sort.Sort(ByVal(res_Tb))
+
+	//Comparator Female(0)/Male(1)
+	comp := []float32{0, 0}
+	for _, v := range res_Tb[:k] {
+		if v.dt.C4 == 0 {
+			comp[0]++
+		} else {
+			comp[1]++
+		}
+	}
+	fmt.Println("Prediction for Female: ", comp[0]/float32(k))
+	fmt.Println("Prediction for Male: ", comp[1]/float32(k))
 	fmt.Println("End Knn")
 }
 
@@ -195,44 +221,50 @@ func LoadTarget(jso string) Data {
 	json.Unmarshal([]byte(jso), &tar)
 	return tar
 }
+func createNewData(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("Request Received")
+	reqBody, _ := ioutil.ReadAll(r.Body)
+	convertir_a_cadena := string(reqBody)
 
-func HomePage(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Welcome to the HomePage!")
-	fmt.Println("Endpoint Hit: homePage")
+	fmt.Println("Loading Target Data...")
+	dt_tgt := LoadTarget(convertir_a_cadena)
+	fmt.Println(dt_tgt)
+
+	fmt.Println("Standarize Target Age...")
+	StandarizeTarget(stAge, &dt_tgt)
+	fmt.Println(dt_tgt)
+
+	knn(dt_tgt, dt, 7)
 }
 
-func handleRequests() {
-	http.HandleFunc("/", HomePage)
-	log.Fatal(http.ListenAndServe(":10000", nil))
+func homePage(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "Homepage Endpoint Hit")
 }
 
-//TODO: ADD NEW COLUMN FOR AGE
-//TODO: ADD WAY TO SWITCH COLUMNS ON THE FLY
-//TODO: ADD CONCURRENCY FOR DATA PARSING
-//TODO: ADD KNN EXECUTION
+func handleRequest() {
+	http.HandleFunc("/", homePage)
+	http.HandleFunc("/data", createNewData)
+	log.Fatal(http.ListenAndServe(":6969", nil))
+
+}
+
 //TODO: ADD CRUD
 //TODO: ADD NETWORK CONECTION
 //TODO: ADD TARGET DATA FORMAT
+var dt []*Data
+var stAge Standarizer
 
 func main() {
-	//file := "Data/D_NORMv2.csv"
+
+	//targetD := `{"AMBITO_INEI": 1,"NACIONAL_EXTRANJERO": 1,"SEXO":1,"EDAD": 20,"PLAN_DE_SEGURO_SIS_EMPRENDEDOR": 0,"PLAN_DE_SEGURO_SIS_GRATUITO": 1,"PLAN_DE_SEGURO_SIS_INDEPENDIENTE": 0,"PLAN_DE_SEGURO_SIS_MICROEMPRESA": 0,"PLAN_DE_SEGURO_SIS_PARA_TODOS": 0}`
+
 	URL := "https://raw.githubusercontent.com/Diegolivia/GoBackendKnn/main/Data/D_NORM_100.csv"
-	targetD := `{"AMBITO_INEI": 1,"NACIONAL_EXTRANJERO": 1,"EDAD": 60,"SEXO": 1,"PLAN_DE_SEGURO_SIS_EMPRENDEDOR": 1,"PLAN_DE_SEGURO_SIS_GRATUITO": 0,"PLAN_DE_SEGURO_SIS_INDEPENDIENTE": 0,"PLAN_DE_SEGURO_SIS_MICROEMPRESA": 0,"PLAN_DE_SEGURO_SIS_PARA_TODOS": 0}`
-	//header := GetHeader(file)
-	//fmt.Println(header)
-
-	dt := []*Data{}
-	fmt.Println("Loading Data")
+	fmt.Println("Loading Data...")
 	dt = GetBodyNet(URL)
-
-	stAge := Standarizer{min: 0, max: 120}
+	fmt.Println("Standarize Data Age...")
+	stAge = Standarizer{min: 0, max: 120}
 	StandarizeAge(stAge, dt)
+	fmt.Println("Starting Backend...")
+	handleRequest()
 
-	fmt.Println("Loading Target")
-	dt_tgt := LoadTarget(targetD)
-	fmt.Println(dt_tgt)
-	fmt.Println("Standarize Target")
-	StandarizeTarget(stAge, &dt_tgt)
-	fmt.Println(dt_tgt)
-	knn(dt_tgt, dt, 5)
 }
