@@ -143,31 +143,33 @@ func CalcDist(tgt, trn Data) float64 {
 	return math.Sqrt(math.Pow(tgt.C1-trn.C1, 2) + math.Pow(tgt.C2-trn.C2, 2) + math.Pow(tgt.C3-trn.C3, 2) + math.Pow(tgt.C5-trn.C5, 2) + math.Pow(tgt.C6-trn.C6, 2) + math.Pow(tgt.C7-trn.C7, 2) + math.Pow(tgt.C8-trn.C8, 2) + math.Pow(tgt.C9-trn.C9, 2))
 }
 
-func tryAdd(arr []dtAux, dt dtAux) []dtAux {
+func tryAdd(arr []dtAux, dt dtAux, max int) []dtAux {
 	arr = append(arr, dt)
 	sort.Sort(ByVal(arr))
-	return arr[:4]
+	return arr[:max]
 }
 
 //Evaluar la distancia de target a la data de training recibida del canal y devuelve solo las distancias menores
-func WorkData(tgt Data, trn <-chan OrdData, res chan<- []dtAux, wg *sync.WaitGroup) {
-	defer wg.Done()
+func WorkData(tgt Data, trn <-chan OrdData, res chan<- []dtAux, wg *sync.WaitGroup, max int) {
 	count := 0
-	//max := 0.0
 	var kval []dtAux
 	for j := range trn {
 		a := CalcDist(tgt, *j.dt)
-		if count < 4 {
+		if count < max {
 			kval = append(kval, dtAux{*j.dt, a})
 			sort.Sort(ByVal(kval))
 		} else {
 			if a < kval[len(kval)-1].val {
-				kval = tryAdd(kval, dtAux{*j.dt, a})
+				//fmt.Println("resorting")
+				kval = tryAdd(kval, dtAux{*j.dt, a}, max)
 			}
 		}
 		count++
 	}
+	//fmt.Println(kval)
 	res <- kval
+	fmt.Println("Work done")
+	defer wg.Done()
 }
 
 //Calcular la distancia de los Knn usando canales
@@ -177,42 +179,45 @@ func knn(target Data, Tdata []*Data, k int) {
 	wg := new(sync.WaitGroup)
 
 	var res_Tb []dtAux
-
+	NumBuff := 6
 	fmt.Println("Start Knn")
+	fmt.Println(fmt.Sprint("K value: ", k))
+	fmt.Println(fmt.Sprint("Process buffer: ", NumBuff))
 
 	for a := 0; a <= 3; a++ {
 		wg.Add(1)
-		go WorkData(target, jobs, res, wg)
+		go WorkData(target, jobs, res, wg, NumBuff)
 	}
 	for it, train := range Tdata {
 		jobs <- OrdData{it, train}
 	}
+
 	close(jobs)
-	go func() {
-		wg.Wait()
-		close(res)
-	}()
+
+	wg.Wait()
+	close(res)
+	fmt.Println("Done waiting, channel closed")
 
 	for v := range res {
 		res_Tb = append(res_Tb, v...)
-
-	}
-	if k > 19 {
-		k = 15
 	}
 	sort.Sort(ByVal(res_Tb))
+	fmt.Println("Done loading, sorted data is on main")
 
 	//Comparator Female(0)/Male(1)
 	comp := []float32{0, 0}
 	for _, v := range res_Tb[:k] {
+		fmt.Println(v)
 		if v.dt.C4 == 0 {
 			comp[0]++
 		} else {
 			comp[1]++
 		}
 	}
+
 	fmt.Println("Prediction for Female: ", comp[0]/float32(k))
 	fmt.Println("Prediction for Male: ", comp[1]/float32(k))
+
 	fmt.Println("End Knn")
 }
 
@@ -222,7 +227,7 @@ func LoadTarget(jso string) Data {
 	return tar
 }
 func createNewData(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("Request Received")
+	fmt.Println("Request Received Target Data ")
 	reqBody, _ := ioutil.ReadAll(r.Body)
 	convertir_a_cadena := string(reqBody)
 
@@ -230,13 +235,13 @@ func createNewData(w http.ResponseWriter, r *http.Request) {
 	dt_tgt = LoadTarget(convertir_a_cadena)
 	fmt.Println(dt_tgt)
 
-	fmt.Println("Standarize Target Age...")
+	fmt.Println("Standarizing Target Age...")
 	StandarizeTarget(stAge, &dt_tgt)
 	fmt.Println(dt_tgt)
 }
 
 func runKnn(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("Request Received")
+	fmt.Println("Request Received Run KNN")
 	num, _ := strconv.Atoi(strings.TrimPrefix(r.URL.Path, "/knn/"))
 	knn(dt_tgt, dt, num)
 }
