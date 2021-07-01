@@ -50,6 +50,11 @@ type ColValue struct {
 	val float64
 }
 
+type Resp struct {
+	t1 float32
+	t2 float32
+}
+
 type ByVal []dtAux
 
 func (a ByVal) Len() int           { return len(a) }
@@ -173,7 +178,7 @@ func WorkData(tgt Data, trn <-chan OrdData, res chan<- []dtAux, wg *sync.WaitGro
 }
 
 //Calcular la distancia de los Knn usando canales
-func knn(target Data, Tdata []*Data, k int) {
+func knn(target Data, Tdata []*Data, k int) Resp {
 	jobs := make(chan OrdData)
 	res := make(chan []dtAux, 40)
 	wg := new(sync.WaitGroup)
@@ -215,10 +220,13 @@ func knn(target Data, Tdata []*Data, k int) {
 		}
 	}
 
-	fmt.Println("Prediction for Female: ", comp[0]/float32(k))
-	fmt.Println("Prediction for Male: ", comp[1]/float32(k))
-
+	r := Resp{}
+	r.t1 = comp[0] / float32(k)
+	r.t2 = comp[1] / float32(k)
+	fmt.Println("Prediction for Female: ", r.t1*100, "%")
+	fmt.Println("Prediction for Male: ", r.t2*100, "%")
 	fmt.Println("End Knn")
+	return r
 }
 
 func LoadTarget(jso string) Data {
@@ -243,7 +251,22 @@ func createNewData(w http.ResponseWriter, r *http.Request) {
 func runKnn(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Request Received Run KNN")
 	num, _ := strconv.Atoi(strings.TrimPrefix(r.URL.Path, "/knn/"))
-	knn(dt_tgt, dt, num)
+	knresp := knn(dt_tgt, dt, num)
+	fmt.Println(knresp)
+
+	jsonRep, err := json.Marshal(knresp)
+	if err != nil {
+		panic(err)
+	}
+	data := Resp{0.55, 0.44}
+
+	fmt.Println(jsonRep)
+	js, _ := json.Marshal(data)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(data)
+	w.Write(js)
 }
 
 func homePage(w http.ResponseWriter, r *http.Request) {
@@ -272,5 +295,4 @@ func main() {
 	StandarizeAge(stAge, dt)
 	fmt.Println("Starting Backend...")
 	handleRequest()
-
 }
