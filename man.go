@@ -275,7 +275,9 @@ func homePage(w http.ResponseWriter, r *http.Request) {
 
 func handleRequest() {
 	http.HandleFunc("/", homePage)
+	//post
 	http.HandleFunc("/data", createNewData)
+	//get
 	http.HandleFunc("/knn/", runKnn)
 	log.Fatal(http.ListenAndServe(":6969", nil))
 }
