@@ -51,8 +51,8 @@ type ColValue struct {
 }
 
 type Resp struct {
-	t1 float32
-	t2 float32
+	cond1 string
+	cond2 string
 }
 
 type ByVal []dtAux
@@ -210,7 +210,7 @@ func knn(target Data, Tdata []*Data, k int) Resp {
 	fmt.Println("Done loading, sorted data is on main")
 
 	//Comparator Female(0)/Male(1)
-	comp := []float32{0, 0}
+	comp := []int{0, 0}
 	for _, v := range res_Tb[:k] {
 		fmt.Println(v)
 		if v.dt.C4 == 0 {
@@ -221,10 +221,10 @@ func knn(target Data, Tdata []*Data, k int) Resp {
 	}
 
 	r := Resp{}
-	r.t1 = comp[0] / float32(k)
-	r.t2 = comp[1] / float32(k)
-	fmt.Println("Prediction for Female: ", r.t1*100, "%")
-	fmt.Println("Prediction for Male: ", r.t2*100, "%")
+	r.cond1 = strconv.Itoa((comp[0] * 100) / k)
+	r.cond2 = strconv.Itoa((comp[1] * 100) / k)
+	fmt.Println("Prediction for Female: ", r.cond1, "%")
+	fmt.Println("Prediction for Male: ", r.cond2, "%")
 	fmt.Println("End Knn")
 	return r
 }
@@ -254,19 +254,11 @@ func runKnn(w http.ResponseWriter, r *http.Request) {
 	knresp := knn(dt_tgt, dt, num)
 	fmt.Println(knresp)
 
-	jsonRep, err := json.Marshal(knresp)
-	if err != nil {
-		panic(err)
-	}
-	data := Resp{0.55, 0.44}
-
-	fmt.Println(jsonRep)
-	js, _ := json.Marshal(data)
-
+	js := fmt.Sprintf("{\"Mujer\":%s, \"Hombre\":%s}", knresp.cond1, knresp.cond2)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(data)
-	w.Write(js)
+	w.Write([]byte(js))
+
 }
 
 func homePage(w http.ResponseWriter, r *http.Request) {
