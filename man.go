@@ -122,6 +122,7 @@ func GetBodyNet(path string) []*Data {
 	reader.Read()
 	data, _ := reader.ReadAll()
 	dt := []*Data{}
+	fmt.Println(len(data))
 	for _, v := range data {
 		aux := toData(v)
 		dt = append(dt, &aux)
@@ -237,8 +238,9 @@ func LoadTarget(jso string) Data {
 func createNewData(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Request Received Target Data ")
 	reqBody, _ := ioutil.ReadAll(r.Body)
+	fmt.Println(reqBody)
 	convertir_a_cadena := string(reqBody)
-
+	fmt.Println(convertir_a_cadena)
 	fmt.Println("Loading Target Data...")
 	dt_tgt = LoadTarget(convertir_a_cadena)
 	fmt.Println(dt_tgt)
@@ -272,6 +274,7 @@ func handleRequest() {
 	//get
 	http.HandleFunc("/knn/", runKnn)
 	log.Fatal(http.ListenAndServe(":6969", nil))
+	fmt.Println("Backend Started :D")
 }
 
 //TODO: ADD TARGET DATA FORMAT
